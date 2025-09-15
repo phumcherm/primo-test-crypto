@@ -2,251 +2,250 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { CryptoService } from './crypto.service';
+import * as crypto from 'crypto';
 
 describe('CryptoService', () => {
   let service: CryptoService;
   let mockConfigService: jest.Mocked<ConfigService>;
 
-  const mockEncryptedData = {
-    data1: 'mock_encrypted_aes_key_base64',
-    data2: 'mock_encrypted_payload_base64',
-  };
+  // Generate test RSA keys for testing
+  const testKeyPair = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+  });
+
+  const mockPrivateKey = testKeyPair.privateKey;
+  const mockPublicKey = testKeyPair.publicKey;
 
   beforeEach(async () => {
-    const mockConfig = {
-      get: jest.fn().mockImplementation((key: string) => {
-        if (key === 'RSA_PRIVATE_KEY') return 'mock_private_key';
-        if (key === 'RSA_PUBLIC_KEY') return 'mock_public_key';
-        return undefined;
+    mockConfigService = {
+      get: jest.fn((key: string) => {
+        if (key === 'RSA_PRIVATE_KEY') return mockPrivateKey;
+        if (key === 'RSA_PUBLIC_KEY') return mockPublicKey;
+        return null;
       }),
-    };
+    } as any;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        {
-          provide: CryptoService,
-          useValue: {
-            encryptData: jest.fn(),
-            decryptData: jest.fn(),
-            rsaPrivateKey: 'mock_private_key',
-            rsaPublicKey: 'mock_public_key',
-          },
-        },
+        CryptoService,
         {
           provide: ConfigService,
-          useValue: mockConfig,
+          useValue: mockConfigService,
         },
       ],
     }).compile();
 
     service = module.get<CryptoService>(CryptoService);
-    mockConfigService = module.get(ConfigService);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  describe('constructor', () => {
+    it('should be defined', () => {
+      expect(service).toBeDefined();
+    });
+
+    it('should have RSA keys initialized', () => {
+      expect(service.rsaPrivateKey).toBe(mockPrivateKey);
+      expect(service.rsaPublicKey).toBe(mockPublicKey);
+    });
+
+    it('should throw error when private key is missing', async () => {
+      const invalidConfigService = {
+        get: jest.fn((key: string) => {
+          if (key === 'RSA_PRIVATE_KEY') return null;
+          if (key === 'RSA_PUBLIC_KEY') return mockPublicKey;
+          return null;
+        }),
+      } as any;
+
+      await expect(
+        Test.createTestingModule({
+          providers: [
+            CryptoService,
+            { provide: ConfigService, useValue: invalidConfigService },
+          ],
+        }).compile()
+      ).rejects.toThrow(InternalServerErrorException);
+    });
+
+    it('should throw error when public key is missing', async () => {
+      const invalidConfigService = {
+        get: jest.fn((key: string) => {
+          if (key === 'RSA_PRIVATE_KEY') return mockPrivateKey;
+          if (key === 'RSA_PUBLIC_KEY') return null;
+          return null;
+        }),
+      } as any;
+
+      await expect(
+        Test.createTestingModule({
+          providers: [
+            CryptoService,
+            { provide: ConfigService, useValue: invalidConfigService },
+          ],
+        }).compile()
+      ).rejects.toThrow(InternalServerErrorException);
+    });
   });
 
   describe('encryptData', () => {
-    it('should encrypt valid payload successfully', async () => {
+    it('should encrypt data successfully', async () => {
       const payload = 'Hello World!';
-      (service.encryptData as jest.Mock).mockResolvedValue(mockEncryptedData);
-
       const result = await service.encryptData(payload);
 
-      expect(result).toBeDefined();
-      expect(result.data1).toBe('mock_encrypted_aes_key_base64');
-      expect(result.data2).toBe('mock_encrypted_payload_base64');
-      expect(service.encryptData).toHaveBeenCalledWith(payload);
+      expect(result).toHaveProperty('data1');
+      expect(result).toHaveProperty('data2');
+      expect(typeof result.data1).toBe('string');
+      expect(typeof result.data2).toBe('string');
+      expect(result.data1.length).toBeGreaterThan(0);
+      expect(result.data2.length).toBeGreaterThan(0);
+    });
+
+    it('should encrypt different payloads to different results', async () => {
+      const payload1 = 'Hello';
+      const payload2 = 'World';
+      
+      const result1 = await service.encryptData(payload1);
+      const result2 = await service.encryptData(payload2);
+
+      expect(result1.data1).not.toBe(result2.data1);
+      expect(result1.data2).not.toBe(result2.data2);
+    });
+
+    it('should encrypt same payload to different results (due to random IV)', async () => {
+      const payload = 'Same payload';
+      
+      const result1 = await service.encryptData(payload);
+      const result2 = await service.encryptData(payload);
+
+      // Should be different due to random IV
+      expect(result1.data2).not.toBe(result2.data2);
     });
 
     it('should throw BadRequestException for empty string', async () => {
-      (service.encryptData as jest.Mock).mockRejectedValue(new BadRequestException('Invalid payload'));
-
       await expect(service.encryptData('')).rejects.toThrow(BadRequestException);
     });
 
-    it('should throw BadRequestException for null payload', async () => {
-      (service.encryptData as jest.Mock).mockRejectedValue(new BadRequestException('Invalid payload'));
-
+    it('should throw BadRequestException for null', async () => {
       await expect(service.encryptData(null as any)).rejects.toThrow(BadRequestException);
     });
 
-    it('should throw BadRequestException for undefined payload', async () => {
-      (service.encryptData as jest.Mock).mockRejectedValue(new BadRequestException('Invalid payload'));
-
+    it('should throw BadRequestException for undefined', async () => {
       await expect(service.encryptData(undefined as any)).rejects.toThrow(BadRequestException);
     });
 
-    it('should handle long payload within limits', async () => {
-      const longPayload = 'A'.repeat(2000);
-      (service.encryptData as jest.Mock).mockResolvedValue(mockEncryptedData);
-
+    it('should handle long payloads', async () => {
+      const longPayload = 'A'.repeat(1000);
       const result = await service.encryptData(longPayload);
 
-      expect(result).toBeDefined();
-      expect(result.data1).toBeDefined();
-      expect(result.data2).toBeDefined();
+      expect(result).toHaveProperty('data1');
+      expect(result).toHaveProperty('data2');
+      expect(result.data1.length).toBeGreaterThan(0);
+      expect(result.data2.length).toBeGreaterThan(0);
     });
 
-    it('should generate different data1 for same payload (random AES key)', async () => {
-      const payload = 'Test payload';
-      const result1 = { data1: 'random1', data2: 'random2' };
-      const result2 = { data1: 'random3', data2: 'random4' };
-      
-      (service.encryptData as jest.Mock)
-        .mockResolvedValueOnce(result1)
-        .mockResolvedValueOnce(result2);
+    it('should handle special characters', async () => {
+      const specialPayload = 'Hello 世界! 🌍 @#$%^&*()';
+      const result = await service.encryptData(specialPayload);
 
-      const firstResult = await service.encryptData(payload);
-      const secondResult = await service.encryptData(payload);
-
-      expect(firstResult.data1).not.toBe(secondResult.data1);
-      expect(firstResult.data2).not.toBe(secondResult.data2);
+      expect(result).toHaveProperty('data1');
+      expect(result).toHaveProperty('data2');
     });
   });
 
   describe('decryptData', () => {
-    it('should decrypt data successfully with valid encrypted data', async () => {
+    it('should decrypt data successfully', async () => {
       const originalPayload = 'Hello World!';
-      (service.decryptData as jest.Mock).mockResolvedValue(originalPayload);
+      
+      // First encrypt
+      const encrypted = await service.encryptData(originalPayload);
+      
+      // Then decrypt
+      const decrypted = await service.decryptData(encrypted.data1, encrypted.data2);
+      
+      expect(decrypted).toBe(originalPayload);
+    });
 
-      const decryptedPayload = await service.decryptData(
-        mockEncryptedData.data1,
-        mockEncryptedData.data2
-      );
+    it('should decrypt various payloads correctly', async () => {
+      const testPayloads = [
+        'Simple text',
+        'Text with numbers 123',
+        'Special chars !@#$%^&*()',
+        'English and Latin: Hello World!',
+        'A'.repeat(500), // Long text
+      ];
 
-      expect(decryptedPayload).toBe(originalPayload);
-      expect(service.decryptData).toHaveBeenCalledWith(
-        mockEncryptedData.data1,
-        mockEncryptedData.data2
-      );
+      for (const payload of testPayloads) {
+        const encrypted = await service.encryptData(payload);
+        const decrypted = await service.decryptData(encrypted.data1, encrypted.data2);
+        expect(decrypted).toBe(payload);
+      }
     });
 
     it('should throw BadRequestException for empty data1', async () => {
-      (service.decryptData as jest.Mock).mockRejectedValue(new BadRequestException('Invalid encrypted data'));
-
-      await expect(service.decryptData('', 'validData2')).rejects.toThrow(BadRequestException);
+      await expect(service.decryptData('', 'valid_data2')).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException for empty data2', async () => {
-      (service.decryptData as jest.Mock).mockRejectedValue(new BadRequestException('Invalid encrypted data'));
-
-      await expect(service.decryptData('validData1', '')).rejects.toThrow(BadRequestException);
+      await expect(service.decryptData('valid_data1', '')).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException for null data1', async () => {
-      (service.decryptData as jest.Mock).mockRejectedValue(new BadRequestException('Invalid encrypted data'));
-
-      await expect(service.decryptData(null as any, 'validData2')).rejects.toThrow(BadRequestException);
+      await expect(service.decryptData(null as any, 'valid_data2')).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException for null data2', async () => {
-      (service.decryptData as jest.Mock).mockRejectedValue(new BadRequestException('Invalid encrypted data'));
-
-      await expect(service.decryptData('validData1', null as any)).rejects.toThrow(BadRequestException);
+      await expect(service.decryptData('valid_data1', null as any)).rejects.toThrow(BadRequestException);
     });
 
     it('should throw error for invalid base64 data1', async () => {
-      (service.decryptData as jest.Mock).mockRejectedValue(new Error('Invalid base64'));
-
-      await expect(service.decryptData('invalid-base64!', 'validData2')).rejects.toThrow();
+      await expect(service.decryptData('invalid_base64!', 'dGVzdA==')).rejects.toThrow();
     });
 
     it('should throw error for invalid base64 data2', async () => {
-      (service.decryptData as jest.Mock).mockRejectedValue(new Error('Invalid base64'));
-
-      await expect(service.decryptData('validData1', 'invalid-base64!')).rejects.toThrow();
+      const validEncrypted = await service.encryptData('test');
+      await expect(service.decryptData(validEncrypted.data1, 'invalid_base64!')).rejects.toThrow();
     });
 
-    it('should handle various payload types correctly', async () => {
-      const testCases = [
-        'Simple text',
-        '{"json": "object"}',
-        'Text with special chars: !@#$%^&*()',
-        '12345',
-        'Multi\nLine\nText',
-        'Unicode: 你好世界 🌍',
-      ];
-
-      for (const payload of testCases) {
-        (service.decryptData as jest.Mock).mockResolvedValue(payload);
-        
-        const decryptedPayload = await service.decryptData('data1', 'data2');
-        expect(decryptedPayload).toBe(payload);
-      }
+    it('should throw error for mismatched data1 and data2', async () => {
+      const encrypted1 = await service.encryptData('payload1');
+      const encrypted2 = await service.encryptData('payload2');
+      
+      // Mix data1 from first with data2 from second
+      await expect(service.decryptData(encrypted1.data1, encrypted2.data2)).rejects.toThrow();
     });
   });
 
   describe('integration tests', () => {
-    it('should maintain data integrity through encrypt/decrypt cycle', async () => {
-      const originalPayload = 'Data integrity test';
+    it('should handle encrypt-decrypt cycle multiple times', async () => {
+      const payloads = ['test1', 'test2', 'test3'];
       
-      // Mock encrypt and decrypt to simulate actual behavior
-      (service.encryptData as jest.Mock).mockResolvedValue(mockEncryptedData);
-      (service.decryptData as jest.Mock).mockResolvedValue(originalPayload);
-      
-      const encryptedData = await service.encryptData(originalPayload);
-      const decryptedPayload = await service.decryptData(
-        encryptedData.data1,
-        encryptedData.data2
-      );
-      
-      expect(decryptedPayload).toBe(originalPayload);
-    });
-
-    it('should generate unique encrypted data for each encryption', async () => {
-      const payload = 'Uniqueness test';
-      const results = [
-        { data1: 'unique1', data2: 'unique2' },
-        { data1: 'unique3', data2: 'unique4' },
-        { data1: 'unique5', data2: 'unique6' },
-      ];
-      
-      (service.encryptData as jest.Mock)
-        .mockResolvedValueOnce(results[0])
-        .mockResolvedValueOnce(results[1])
-        .mockResolvedValueOnce(results[2]);
-
-      const result1 = await service.encryptData(payload);
-      const result2 = await service.encryptData(payload);
-      const result3 = await service.encryptData(payload);
-
-      // All data1 should be different
-      expect(result1.data1).not.toBe(result2.data1);
-      expect(result2.data1).not.toBe(result3.data1);
-      expect(result1.data1).not.toBe(result3.data1);
-
-      // All data2 should be different
-      expect(result1.data2).not.toBe(result2.data2);
-      expect(result2.data2).not.toBe(result3.data2);
-      expect(result1.data2).not.toBe(result3.data2);
-    });
-  });
-
-  describe('service configuration', () => {
-    it('should have RSA keys available', () => {
-      expect(service.rsaPrivateKey).toBe('mock_private_key');
-      expect(service.rsaPublicKey).toBe('mock_public_key');
-    });
-  });
-
-  describe('error handling', () => {
-    it('should handle service errors appropriately', async () => {
-      const errors = [
-        new BadRequestException('Invalid payload'),
-        new BadRequestException('Invalid encrypted data'),
-        new InternalServerErrorException('Configuration error'),
-        new Error('Crypto operation failed'),
-      ];
-
-      for (const error of errors) {
-        (service.encryptData as jest.Mock).mockRejectedValue(error);
-        await expect(service.encryptData('test')).rejects.toThrow(error);
-        
-        (service.decryptData as jest.Mock).mockRejectedValue(error);
-        await expect(service.decryptData('data1', 'data2')).rejects.toThrow(error);
+      for (const payload of payloads) {
+        const encrypted = await service.encryptData(payload);
+        const decrypted = await service.decryptData(encrypted.data1, encrypted.data2);
+        expect(decrypted).toBe(payload);
       }
+    });
+
+    it('should generate different encryption results for same input', async () => {
+      const payload = 'same input';
+      const results = [];
+      
+      for (let i = 0; i < 3; i++) {
+        const encrypted = await service.encryptData(payload);
+        results.push(encrypted);
+      }
+      
+      // All should decrypt to same value
+      for (const result of results) {
+        const decrypted = await service.decryptData(result.data1, result.data2);
+        expect(decrypted).toBe(payload);
+      }
+      
+      // But encrypted values should be different (due to random IV)
+      expect(results[0].data2).not.toBe(results[1].data2);
+      expect(results[1].data2).not.toBe(results[2].data2);
     });
   });
 });

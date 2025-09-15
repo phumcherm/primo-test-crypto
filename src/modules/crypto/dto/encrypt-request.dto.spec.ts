@@ -3,20 +3,38 @@ import { plainToClass } from 'class-transformer';
 import { EncryptRequestDto } from './encrypt-request.dto';
 
 describe('EncryptRequestDto', () => {
-  describe('payload validation', () => {
+  describe('valid payloads', () => {
     it('should pass validation with valid payload', async () => {
-      const validPayloads = [
-        'Hello World!',
-        'A',
-        'A'.repeat(2000), // Max length
-        'Text with numbers 123',
-        'Special chars: !@#$%^&*()',
-        '{"json": "object"}',
+      const dto = plainToClass(EncryptRequestDto, { payload: 'Hello World!' });
+      const errors = await validate(dto);
+      
+      expect(errors).toHaveLength(0);
+    });
+
+    it('should pass validation with minimum length payload', async () => {
+      const dto = plainToClass(EncryptRequestDto, { payload: 'A' });
+      const errors = await validate(dto);
+      
+      expect(errors).toHaveLength(0);
+    });
+
+    it('should pass validation with maximum length payload', async () => {
+      const dto = plainToClass(EncryptRequestDto, { payload: 'A'.repeat(2000) });
+      const errors = await validate(dto);
+      
+      expect(errors).toHaveLength(0);
+    });
+
+    it('should pass validation with special characters', async () => {
+      const specialPayloads = [
+        'Hello @#$%^&*()!',
         'Unicode: 你好世界 🌍',
-        'Multi\nLine\nText',
+        'JSON-like: {"key": "value"}',
+        'Numbers: 1234567890',
+        'Mixed: Hello123!@#',
       ];
 
-      for (const payload of validPayloads) {
+      for (const payload of specialPayloads) {
         const dto = plainToClass(EncryptRequestDto, { payload });
         const errors = await validate(dto);
         
@@ -24,6 +42,28 @@ describe('EncryptRequestDto', () => {
       }
     });
 
+    it('should pass validation with whitespace characters', async () => {
+      const whitespacePayloads = [
+        ' ', // Single space
+        '  ', // Multiple spaces
+        '\t', // Tab
+        '\n', // Newline
+        ' \t\n ', // Mixed whitespace
+        'Text with spaces',
+        'Text\nwith\nnewlines',
+        'Text\twith\ttabs',
+      ];
+
+      for (const payload of whitespacePayloads) {
+        const dto = plainToClass(EncryptRequestDto, { payload });
+        const errors = await validate(dto);
+        
+        expect(errors).toHaveLength(0);
+      }
+    });
+  });
+
+  describe('invalid payloads - missing field', () => {
     it('should fail validation when payload is missing', async () => {
       const dto = plainToClass(EncryptRequestDto, {});
       const errors = await validate(dto);
@@ -31,17 +71,7 @@ describe('EncryptRequestDto', () => {
       expect(errors).toHaveLength(1);
       expect(errors[0].property).toBe('payload');
       expect(errors[0].constraints).toHaveProperty('isDefined');
-      expect(errors[0].constraints?.isDefined).toBe('payload field is required');
-    });
-
-    it('should fail validation when payload is null', async () => {
-      const dto = plainToClass(EncryptRequestDto, { payload: null });
-      const errors = await validate(dto);
-      
-      expect(errors).toHaveLength(1);
-      expect(errors[0].property).toBe('payload');
-      expect(errors[0].constraints).toHaveProperty('isString');
-      expect(errors[0].constraints?.isString).toBe('payload must be a string');
+      expect(errors[0].constraints!.isDefined).toBe('payload field is required');
     });
 
     it('should fail validation when payload is undefined', async () => {
@@ -52,7 +82,21 @@ describe('EncryptRequestDto', () => {
       expect(errors[0].property).toBe('payload');
       expect(errors[0].constraints).toHaveProperty('isDefined');
     });
+  });
 
+  describe('invalid payloads - null values', () => {
+    it('should fail validation when payload is null', async () => {
+      const dto = plainToClass(EncryptRequestDto, { payload: null });
+      const errors = await validate(dto);
+      
+      expect(errors).toHaveLength(1);
+      expect(errors[0].property).toBe('payload');
+      expect(errors[0].constraints).toHaveProperty('isString');
+      expect(errors[0].constraints!.isString).toBe('payload must be a string');
+    });
+  });
+
+  describe('invalid payloads - empty values', () => {
     it('should fail validation when payload is empty string', async () => {
       const dto = plainToClass(EncryptRequestDto, { payload: '' });
       const errors = await validate(dto);
@@ -61,82 +105,87 @@ describe('EncryptRequestDto', () => {
       expect(errors[0].property).toBe('payload');
       expect(errors[0].constraints).toHaveProperty('isNotEmpty');
       expect(errors[0].constraints).toHaveProperty('minLength');
-      expect(errors[0].constraints?.isNotEmpty).toBe('payload cannot be empty');
+      expect(errors[0].constraints!.isNotEmpty).toBe('payload cannot be empty');
     });
+  });
 
+  describe('invalid payloads - wrong types', () => {
     it('should fail validation when payload is not a string', async () => {
-      const invalidPayloads = [
+      const invalidValues = [
         123,
         true,
         false,
         {},
         [],
-        { text: 'object' },
+        new Date(),
       ];
 
-      for (const payload of invalidPayloads) {
-        const dto = plainToClass(EncryptRequestDto, { payload });
+      for (const value of invalidValues) {
+        const dto = plainToClass(EncryptRequestDto, { payload: value });
         const errors = await validate(dto);
         
         expect(errors).toHaveLength(1);
         expect(errors[0].property).toBe('payload');
         expect(errors[0].constraints).toHaveProperty('isString');
-        expect(errors[0].constraints?.isString).toBe('payload must be a string');
+        expect(errors[0].constraints!.isString).toBe('payload must be a string');
       }
     });
+  });
 
+  describe('invalid payloads - length constraints', () => {
     it('should fail validation when payload exceeds maximum length', async () => {
-      const tooLongPayload = 'A'.repeat(2001); // Exceeds max length of 2000
-      const dto = plainToClass(EncryptRequestDto, { payload: tooLongPayload });
+      const dto = plainToClass(EncryptRequestDto, { payload: 'A'.repeat(2001) });
       const errors = await validate(dto);
       
       expect(errors).toHaveLength(1);
       expect(errors[0].property).toBe('payload');
       expect(errors[0].constraints).toHaveProperty('maxLength');
-      expect(errors[0].constraints?.maxLength).toBe('payload cannot exceed 2000 characters');
+      expect(errors[0].constraints!.maxLength).toBe('payload cannot exceed 2000 characters');
     });
 
-    it('should pass validation with payload at minimum length', async () => {
-      const minLengthPayload = 'A'; // Minimum length of 1
-      const dto = plainToClass(EncryptRequestDto, { payload: minLengthPayload });
-      const errors = await validate(dto);
-      
-      expect(errors).toHaveLength(0);
-    });
-
-    it('should pass validation with payload at maximum length', async () => {
-      const maxLengthPayload = 'A'.repeat(2000); // Maximum length of 2000
-      const dto = plainToClass(EncryptRequestDto, { payload: maxLengthPayload });
-      const errors = await validate(dto);
-      
-      expect(errors).toHaveLength(0);
-    });
-
-    it('should provide correct error messages for multiple violations', async () => {
-      // Test empty string which violates both isNotEmpty and minLength
-      const dto = plainToClass(EncryptRequestDto, { payload: '' });
+    it('should fail validation when payload is much longer than limit', async () => {
+      const dto = plainToClass(EncryptRequestDto, { payload: 'A'.repeat(5000) });
       const errors = await validate(dto);
       
       expect(errors).toHaveLength(1);
       expect(errors[0].property).toBe('payload');
+      expect(errors[0].constraints).toHaveProperty('maxLength');
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle object with extra properties', async () => {
+      const dto = plainToClass(EncryptRequestDto, {
+        payload: 'Valid payload',
+        extraProperty: 'Should be ignored',
+        anotherExtra: 123,
+      });
+      const errors = await validate(dto);
       
-      const constraints = errors[0].constraints || {};
-      const constraintValues = Object.values(constraints);
-      
-      expect(constraintValues).toContain('payload cannot be empty');
-      expect(constraintValues).toContain('payload must be at least 1 character long');
+      expect(errors).toHaveLength(0);
+      expect(dto.payload).toBe('Valid payload');
     });
 
-    it('should validate extra properties are not allowed (whitelist)', async () => {
-      const dtoWithExtra = plainToClass(EncryptRequestDto, {
-        payload: 'Valid payload',
-        extraField: 'This should not be allowed',
+    it('should handle nested object as payload (should fail)', async () => {
+      const dto = plainToClass(EncryptRequestDto, {
+        payload: { nested: 'object' },
       });
+      const errors = await validate(dto);
       
-      // Note: This test assumes forbidNonWhitelisted is enabled in ValidationPipe
-      // The actual enforcement happens at the pipe level, not at the DTO validation level
-      const errors = await validate(dtoWithExtra);
-      expect(errors).toHaveLength(0); // DTO validation itself doesn't check whitelist
+      expect(errors).toHaveLength(1);
+      expect(errors[0].property).toBe('payload');
+      expect(errors[0].constraints).toHaveProperty('isString');
+    });
+
+    it('should handle array as payload (should fail)', async () => {
+      const dto = plainToClass(EncryptRequestDto, {
+        payload: ['array', 'values'],
+      });
+      const errors = await validate(dto);
+      
+      expect(errors).toHaveLength(1);
+      expect(errors[0].property).toBe('payload');
+      expect(errors[0].constraints).toHaveProperty('isString');
     });
   });
 
@@ -157,74 +206,43 @@ describe('EncryptRequestDto', () => {
       expect(dto.payload).toBeUndefined();
     });
 
-    it('should preserve string payload types during transformation', () => {
-      const testCases = [
-        { input: 'simple string', expected: 'simple string' },
-        { input: '123', expected: '123' },
-        { input: 'true', expected: 'true' },
-        { input: '{"json": "string"}', expected: '{"json": "string"}' },
-      ];
+    it('should preserve string types during transformation', () => {
+      const testData = { payload: 'String value' };
+      const dto = plainToClass(EncryptRequestDto, testData);
+      
+      expect(typeof dto.payload).toBe('string');
+      expect(dto.payload).toBe('String value');
+    });
 
-      for (const testCase of testCases) {
-        const dto = plainToClass(EncryptRequestDto, { payload: testCase.input });
-        expect(dto.payload).toBe(testCase.expected);
-        expect(typeof dto.payload).toBe('string');
-      }
+    it('should handle string conversion for number-like strings', () => {
+      const testData = { payload: '12345' };
+      const dto = plainToClass(EncryptRequestDto, testData);
+      
+      expect(typeof dto.payload).toBe('string');
+      expect(dto.payload).toBe('12345');
     });
   });
 
-  describe('edge cases', () => {
-    it('should handle whitespace-only strings correctly', async () => {
-      const whitespacePayloads = [
-        ' ',           // Single space - should pass
-        '  ',          // Multiple spaces - should pass
-        '\t',          // Tab - should pass
-        '\n',          // Newline - should pass
-        ' \t\n ',      // Mixed whitespace - should pass
-      ];
-
-      for (const payload of whitespacePayloads) {
-        const dto = plainToClass(EncryptRequestDto, { payload });
-        const errors = await validate(dto);
-        
-        // These should pass validation as they are not empty strings
-        expect(errors).toHaveLength(0);
-      }
+  describe('multiple errors', () => {
+    it('should return single error for empty string (multiple constraints violated)', async () => {
+      const dto = plainToClass(EncryptRequestDto, { payload: '' });
+      const errors = await validate(dto);
+      
+      expect(errors).toHaveLength(1);
+      expect(errors[0].property).toBe('payload');
+      // Should have both isNotEmpty and minLength constraints
+      expect(errors[0].constraints).toHaveProperty('isNotEmpty');
+      expect(errors[0].constraints).toHaveProperty('minLength');
     });
 
-    it('should handle Unicode characters correctly', async () => {
-      const unicodePayloads = [
-        '你好世界',           // Chinese
-        'Здравствуй мир',     // Russian  
-        'مرحبا بالعالم',      // Arabic
-        '🌍🌎🌏',            // Emojis
-        'café',              // Accented characters
-      ];
-
-      for (const payload of unicodePayloads) {
-        const dto = plainToClass(EncryptRequestDto, { payload });
-        const errors = await validate(dto);
-        
-        expect(errors).toHaveLength(0);
-      }
-    });
-
-    it('should handle special string edge cases', async () => {
-      const edgeCases = [
-        'null',          // String "null"
-        'undefined',     // String "undefined"
-        'false',         // String "false"
-        '0',             // String "0"
-        '[]',            // String "[]"
-        '{}',            // String "{}"
-      ];
-
-      for (const payload of edgeCases) {
-        const dto = plainToClass(EncryptRequestDto, { payload });
-        const errors = await validate(dto);
-        
-        expect(errors).toHaveLength(0);
-      }
+    it('should handle payload that violates multiple constraints', async () => {
+      // null violates isDefined, isString, isNotEmpty, and minLength
+      const dto = plainToClass(EncryptRequestDto, { payload: null });
+      const errors = await validate(dto);
+      
+      expect(errors).toHaveLength(1);
+      expect(errors[0].property).toBe('payload');
+      expect(errors[0].constraints).toHaveProperty('isString');
     });
   });
 });

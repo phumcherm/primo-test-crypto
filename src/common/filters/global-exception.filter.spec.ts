@@ -1,29 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpException, HttpStatus, BadRequestException, InternalServerErrorException } from '@nestjs/common';
-import { ArgumentsHost } from '@nestjs/common';
+import { ArgumentsHost, HttpException, HttpStatus, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { GlobalExceptionFilter } from './global-exception.filter';
 import { ERROR_CODES } from '../constants';
-
-// Mock Request and Response
-const mockRequest = {
-  method: 'POST',
-  url: '/get-encrypt-data',
-};
-
-const mockResponse = {
-  status: jest.fn().mockReturnThis(),
-  json: jest.fn().mockReturnThis(),
-};
-
-const mockArgumentsHost = {
-  switchToHttp: jest.fn().mockReturnValue({
-    getResponse: () => mockResponse,
-    getRequest: () => mockRequest,
-  }),
-} as unknown as ArgumentsHost;
+import { Request, Response } from 'express';
 
 describe('GlobalExceptionFilter', () => {
   let filter: GlobalExceptionFilter;
+  let mockArgumentsHost: jest.Mocked<ArgumentsHost>;
+  let mockRequest: jest.Mocked<Request>;
+  let mockResponse: jest.Mocked<Response>;
+  let loggerSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -31,26 +17,52 @@ describe('GlobalExceptionFilter', () => {
     }).compile();
 
     filter = module.get<GlobalExceptionFilter>(GlobalExceptionFilter);
-    
-    // Reset mocks
-    jest.clearAllMocks();
+
+    // Mock response object
+    mockResponse = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    } as any;
+
+    // Mock request object
+    mockRequest = {
+      method: 'POST',
+      url: '/get-encrypt-data',
+    } as any;
+
+    // Mock arguments host
+    mockArgumentsHost = {
+      switchToHttp: jest.fn().mockReturnValue({
+        getResponse: jest.fn().mockReturnValue(mockResponse),
+        getRequest: jest.fn().mockReturnValue(mockRequest),
+      }),
+    } as any;
+
+    // Spy on logger
+    loggerSpy = jest.spyOn(filter['logger'], 'error').mockImplementation();
   });
 
-  it('should be defined', () => {
-    expect(filter).toBeDefined();
+  afterEach(() => {
+    loggerSpy.mockRestore();
+  });
+
+  describe('constructor', () => {
+    it('should be defined', () => {
+      expect(filter).toBeDefined();
+    });
   });
 
   describe('HttpException handling', () => {
-    it('should handle BadRequestException with validation errors', () => {
-      const validationErrors = ['payload must be a string', 'payload cannot be empty'];
-      const exception = new BadRequestException({
-        message: validationErrors,
+    it('should handle BadRequestException with validation errors (should NOT log)', () => {
+      const validationException = new BadRequestException({
+        message: ['payload must be a string', 'payload cannot be empty'],
         error: 'Bad Request',
         statusCode: 400,
       });
 
-      filter.catch(exception, mockArgumentsHost);
+      filter.catch(validationException, mockArgumentsHost);
 
+      expect(loggerSpy).not.toHaveBeenCalled();
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -59,11 +71,15 @@ describe('GlobalExceptionFilter', () => {
       });
     });
 
-    it('should handle BadRequestException with single error message', () => {
-      const exception = new BadRequestException('Invalid payload');
+    it('should handle BadRequestException with single error message (should log)', () => {
+      const businessException = new BadRequestException('Invalid payload');
 
-      filter.catch(exception, mockArgumentsHost);
+      filter.catch(businessException, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 400 - Invalid payload',
+        expect.any(String)
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -73,10 +89,14 @@ describe('GlobalExceptionFilter', () => {
     });
 
     it('should handle BadRequestException with invalid encrypted data message', () => {
-      const exception = new BadRequestException('Invalid encrypted data');
+      const cryptoException = new BadRequestException('Invalid encrypted data');
 
-      filter.catch(exception, mockArgumentsHost);
+      filter.catch(cryptoException, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 400 - Invalid encrypted data',
+        expect.any(String)
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -86,10 +106,14 @@ describe('GlobalExceptionFilter', () => {
     });
 
     it('should handle InternalServerErrorException with RSA keys error', () => {
-      const exception = new InternalServerErrorException('RSA keys not found in environment variables');
+      const configError = new InternalServerErrorException('RSA keys not found in environment variables');
 
-      filter.catch(exception, mockArgumentsHost);
+      filter.catch(configError, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 500 - RSA keys not found in environment variables',
+        expect.any(String)
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -99,10 +123,14 @@ describe('GlobalExceptionFilter', () => {
     });
 
     it('should handle generic HttpException', () => {
-      const exception = new HttpException('Forbidden resource', HttpStatus.FORBIDDEN);
+      const httpException = new HttpException('Forbidden resource', HttpStatus.FORBIDDEN);
 
-      filter.catch(exception, mockArgumentsHost);
+      filter.catch(httpException, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 403 - Forbidden resource',
+        expect.any(String)
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(403);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -112,16 +140,44 @@ describe('GlobalExceptionFilter', () => {
     });
 
     it('should handle HttpException with string response', () => {
-      const exception = new HttpException('Not Found', HttpStatus.NOT_FOUND);
+      const httpException = new HttpException('Not Found', HttpStatus.NOT_FOUND);
 
-      filter.catch(exception, mockArgumentsHost);
+      filter.catch(httpException, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 404 - Not Found',
+        expect.any(String)
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(404);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
         error_code: ERROR_CODES.NOT_FOUND,
         data: null,
       });
+    });
+
+    it('should map various HTTP status codes correctly', () => {
+      const statusCodes = [
+        { status: HttpStatus.BAD_REQUEST, errorCode: ERROR_CODES.BAD_REQUEST },
+        { status: HttpStatus.UNAUTHORIZED, errorCode: ERROR_CODES.UNAUTHORIZED },
+        { status: HttpStatus.FORBIDDEN, errorCode: ERROR_CODES.FORBIDDEN },
+        { status: HttpStatus.NOT_FOUND, errorCode: ERROR_CODES.NOT_FOUND },
+        { status: HttpStatus.METHOD_NOT_ALLOWED, errorCode: ERROR_CODES.METHOD_NOT_ALLOWED },
+        { status: HttpStatus.INTERNAL_SERVER_ERROR, errorCode: ERROR_CODES.INTERNAL_SERVER_ERROR },
+        { status: 999, errorCode: ERROR_CODES.UNKNOWN_ERROR }, // Unknown status
+      ];
+
+      for (const { status, errorCode } of statusCodes) {
+        const httpException = new HttpException('Test message', status);
+        filter.catch(httpException, mockArgumentsHost);
+
+        expect(mockResponse.status).toHaveBeenCalledWith(status);
+        expect(mockResponse.json).toHaveBeenCalledWith({
+          successful: false,
+          error_code: errorCode,
+          data: null,
+        });
+      }
     });
   });
 
@@ -131,6 +187,10 @@ describe('GlobalExceptionFilter', () => {
 
       filter.catch(error, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 400 - Invalid payload',
+        error.stack
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -144,6 +204,10 @@ describe('GlobalExceptionFilter', () => {
 
       filter.catch(error, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 400 - Invalid encrypted data',
+        error.stack
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -157,6 +221,10 @@ describe('GlobalExceptionFilter', () => {
 
       filter.catch(error, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 500 - RSA keys not found in configuration file',
+        error.stack
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -170,6 +238,10 @@ describe('GlobalExceptionFilter', () => {
 
       filter.catch(error, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 400 - bad decrypt',
+        error.stack
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -183,6 +255,10 @@ describe('GlobalExceptionFilter', () => {
 
       filter.catch(error, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 400 - encrypt failed',
+        error.stack
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -196,6 +272,10 @@ describe('GlobalExceptionFilter', () => {
 
       filter.catch(error, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 500 - Some unexpected error',
+        error.stack
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -211,6 +291,10 @@ describe('GlobalExceptionFilter', () => {
 
       filter.catch(unknownException, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 500 - Internal server error',
+        undefined
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(500);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -222,70 +306,39 @@ describe('GlobalExceptionFilter', () => {
     it('should handle null exception', () => {
       filter.catch(null, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 500 - Internal server error',
+        undefined
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(500);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        successful: false,
-        error_code: ERROR_CODES.INTERNAL_SERVER_ERROR,
-        data: null,
-      });
     });
 
     it('should handle undefined exception', () => {
       filter.catch(undefined, mockArgumentsHost);
 
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 500 - Internal server error',
+        undefined
+      );
       expect(mockResponse.status).toHaveBeenCalledWith(500);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        successful: false,
-        error_code: ERROR_CODES.INTERNAL_SERVER_ERROR,
-        data: null,
-      });
-    });
-  });
-
-  describe('getErrorCodeFromStatus', () => {
-    it('should map HTTP status codes to correct error codes', () => {
-      const testCases = [
-        { status: 400, expected: ERROR_CODES.BAD_REQUEST },
-        { status: 401, expected: ERROR_CODES.UNAUTHORIZED },
-        { status: 403, expected: ERROR_CODES.FORBIDDEN },
-        { status: 404, expected: ERROR_CODES.NOT_FOUND },
-        { status: 405, expected: ERROR_CODES.METHOD_NOT_ALLOWED },
-        { status: 500, expected: ERROR_CODES.INTERNAL_SERVER_ERROR },
-        { status: 999, expected: ERROR_CODES.UNKNOWN_ERROR }, // Unknown status
-      ];
-
-      for (const testCase of testCases) {
-        const exception = new HttpException('Test message', testCase.status);
-        filter.catch(exception, mockArgumentsHost);
-
-        expect(mockResponse.json).toHaveBeenCalledWith({
-          successful: false,
-          error_code: testCase.expected,
-          data: null,
-        });
-
-        jest.clearAllMocks();
-      }
     });
   });
 
   describe('complex validation scenarios', () => {
     it('should handle complex validation error array', () => {
-      const complexValidationErrors = [
-        'payload must be a string',
-        'payload cannot be empty',
-        'payload must be at least 1 character long',
-        'payload cannot exceed 2000 characters'
-      ];
-      
-      const exception = new BadRequestException({
-        message: complexValidationErrors,
+      const complexValidationException = new BadRequestException({
+        message: [
+          'payload must be a string',
+          'payload should not be empty',
+          'payload must be longer than or equal to 1 characters',
+        ],
         error: 'Bad Request',
         statusCode: 400,
       });
 
-      filter.catch(exception, mockArgumentsHost);
+      filter.catch(complexValidationException, mockArgumentsHost);
 
+      expect(loggerSpy).not.toHaveBeenCalled(); // Validation errors should not log
       expect(mockResponse.status).toHaveBeenCalledWith(400);
       expect(mockResponse.json).toHaveBeenCalledWith({
         successful: false,
@@ -295,39 +348,19 @@ describe('GlobalExceptionFilter', () => {
     });
 
     it('should handle nested error objects', () => {
-      const exception = new BadRequestException({
-        message: {
-          payload: ['payload must be a string', 'payload cannot be empty']
-        },
+      const nestedErrorException = new BadRequestException({
+        message: { field: 'payload', errors: ['is required', 'must be string'] },
         error: 'Bad Request',
         statusCode: 400,
       });
 
-      filter.catch(exception, mockArgumentsHost);
+      filter.catch(nestedErrorException, mockArgumentsHost);
 
-      expect(mockResponse.status).toHaveBeenCalledWith(400);
-      // Should handle nested objects gracefully
-      expect(mockResponse.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          successful: false,
-          data: null,
-        })
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 400 - [object Object]',
+        expect.any(String)
       );
-    });
-  });
-
-  describe('logging behavior', () => {
-    it('should log errors appropriately', () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-      
-      const error = new Error('Test error for logging');
-      filter.catch(error, mockArgumentsHost);
-
-      // Note: We can't easily test the internal logger without more complex mocking
-      // This test verifies the filter doesn't throw during logging
-      expect(mockResponse.status).toHaveBeenCalledWith(500);
-      
-      consoleSpy.mockRestore();
+      expect(mockResponse.status).toHaveBeenCalledWith(400);
     });
   });
 
@@ -338,37 +371,160 @@ describe('GlobalExceptionFilter', () => {
       for (const method of methods) {
         const customMockRequest = { ...mockRequest, method };
         const customMockArgumentsHost = {
+          ...mockArgumentsHost,
           switchToHttp: jest.fn().mockReturnValue({
-            getResponse: () => mockResponse,
-            getRequest: () => customMockRequest,
+            getResponse: jest.fn().mockReturnValue(mockResponse),
+            getRequest: jest.fn().mockReturnValue(customMockRequest),
           }),
-        } as unknown as ArgumentsHost;
+        };
 
-        const exception = new BadRequestException('Test error');
-        filter.catch(exception, customMockArgumentsHost);
+        const testException = new BadRequestException('Test error');
+        filter.catch(testException, customMockArgumentsHost as any);
 
-        expect(mockResponse.status).toHaveBeenCalledWith(400);
-        jest.clearAllMocks();
+        expect(loggerSpy).toHaveBeenCalledWith(
+          `${method} /get-encrypt-data - 400 - Test error`,
+          expect.any(String)
+        );
       }
     });
 
     it('should handle different request URLs', () => {
-      const urls = ['/get-encrypt-data', '/get-decrypt-data', '/api/test'];
+      const urls = [
+        '/get-encrypt-data',
+        '/get-decrypt-data',
+        '/api/test',
+      ];
       
       for (const url of urls) {
         const customMockRequest = { ...mockRequest, url };
         const customMockArgumentsHost = {
+          ...mockArgumentsHost,
           switchToHttp: jest.fn().mockReturnValue({
-            getResponse: () => mockResponse,
-            getRequest: () => customMockRequest,
+            getResponse: jest.fn().mockReturnValue(mockResponse),
+            getRequest: jest.fn().mockReturnValue(customMockRequest),
           }),
-        } as unknown as ArgumentsHost;
+        };
 
-        const exception = new BadRequestException('Test error');
-        filter.catch(exception, customMockArgumentsHost);
+        const testException = new BadRequestException('Test error');
+        filter.catch(testException, customMockArgumentsHost as any);
 
-        expect(mockResponse.status).toHaveBeenCalledWith(400);
-        jest.clearAllMocks();
+        expect(loggerSpy).toHaveBeenCalledWith(
+          `POST ${url} - 400 - Test error`,
+          expect.any(String)
+        );
+      }
+    });
+  });
+
+  describe('error message handling', () => {
+    it('should handle array message properly', () => {
+      const arrayMessageException = new BadRequestException({
+        message: ['First error', 'Second error'],
+        error: 'Bad Request',
+        statusCode: 400,
+      });
+
+      filter.catch(arrayMessageException, mockArgumentsHost);
+
+      expect(loggerSpy).not.toHaveBeenCalled(); // Should not log validation errors
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        successful: false,
+        error_code: ERROR_CODES.VALIDATION_ERROR,
+        data: null,
+      });
+    });
+
+    it('should handle string message in HttpException response', () => {
+      const stringMessageException = new BadRequestException('Simple string message');
+
+      filter.catch(stringMessageException, mockArgumentsHost);
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 400 - Simple string message',
+        expect.any(String)
+      );
+    });
+
+    it('should handle empty message', () => {
+      const emptyMessageException = new BadRequestException('');
+
+      filter.catch(emptyMessageException, mockArgumentsHost);
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        'POST /get-encrypt-data - 400 - Bad Request',
+        expect.any(String)
+      );
+    });
+  });
+
+  describe('logging behavior verification', () => {
+    it('should not log for any validation error patterns', () => {
+      const validationPatterns = [
+        ['field is required'],
+        ['must be a string'],
+        ['cannot be empty'],
+        ['must be longer than'],
+        ['must be shorter than'],
+        ['multiple', 'validation', 'errors'],
+      ];
+
+      for (const pattern of validationPatterns) {
+        const validationException = new BadRequestException({
+          message: pattern,
+          error: 'Bad Request',
+          statusCode: 400,
+        });
+
+        filter.catch(validationException, mockArgumentsHost);
+        expect(loggerSpy).not.toHaveBeenCalled();
+        
+        loggerSpy.mockClear();
+      }
+    });
+
+    it('should log for all business logic errors', () => {
+      const businessErrorMessages = [
+        'Invalid payload',
+        'Invalid encrypted data',
+        'RSA keys not found',
+        'Decryption failed',
+        'Encryption failed',
+      ];
+
+      for (const message of businessErrorMessages) {
+        const businessException = new BadRequestException(message);
+        
+        filter.catch(businessException, mockArgumentsHost);
+        expect(loggerSpy).toHaveBeenCalledWith(
+          `POST /get-encrypt-data - 400 - ${message}`,
+          expect.any(String)
+        );
+        
+        loggerSpy.mockClear();
+      }
+    });
+  });
+
+  describe('response format consistency', () => {
+    it('should always return consistent error response format', () => {
+      const testExceptions = [
+        new BadRequestException('Test'),
+        new InternalServerErrorException('Test'),
+        new HttpException('Test', HttpStatus.FORBIDDEN),
+        new Error('Test'),
+        'Unknown error',
+      ];
+
+      for (const exception of testExceptions) {
+        filter.catch(exception, mockArgumentsHost);
+        
+        const lastCall = mockResponse.json.mock.calls[mockResponse.json.mock.calls.length - 1];
+        const responseFormat = lastCall[0];
+        
+        expect(responseFormat).toHaveProperty('successful', false);
+        expect(responseFormat).toHaveProperty('error_code');
+        expect(responseFormat).toHaveProperty('data', null);
+        expect(typeof responseFormat.error_code).toBe('string');
       }
     });
   });

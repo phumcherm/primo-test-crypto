@@ -80,11 +80,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       errorCode = ERROR_CODES.INTERNAL_SERVER_ERROR;
     }
 
-    // Log error
-    this.logger.error(
-      `${request.method} ${request.url} - ${status} - ${message}`,
-      exception instanceof Error ? exception.stack : undefined,
+    // Log error (skip logging for validation errors)
+    const shouldSkipLogging = (
+      status === HttpStatus.BAD_REQUEST && 
+      errorCode === ERROR_CODES.VALIDATION_ERROR
     );
+
+    if (!shouldSkipLogging) {
+      this.logger.error(
+        `${request.method} ${request.url} - ${status} - ${message}`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+    }
 
     // Return consistent error response format
     const apiResponse: ErrorResponse = {

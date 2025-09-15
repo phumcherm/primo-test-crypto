@@ -1,263 +1,330 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
 import { CryptoController } from './crypto.controller';
 import { CryptoService } from './crypto.service';
 import { EncryptRequestDto } from './dto/encrypt-request.dto';
 import { DecryptRequestDto } from './dto/decrypt-request.dto';
-import { SuccessResponse, EncryptData, DecryptData } from '../../common/interfaces/api-response.interface';
+import { EncryptData, DecryptData } from '../../common/interfaces/api-response.interface';
+import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
 
 describe('CryptoController', () => {
   let controller: CryptoController;
-  let mockCryptoService: jest.Mocked<CryptoService>;
-
-  const mockEncryptedData: EncryptData = {
-    data1: 'mock_encrypted_aes_key',
-    data2: 'mock_encrypted_payload',
-  };
+  let cryptoService: jest.Mocked<CryptoService>;
 
   beforeEach(async () => {
-    const mockService = {
-      encryptData: jest.fn(),
-      decryptData: jest.fn(),
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       controllers: [CryptoController],
       providers: [
         {
           provide: CryptoService,
-          useValue: mockService,
+          useValue: {
+            encryptData: jest.fn(),
+            decryptData: jest.fn(),
+          },
         },
       ],
     }).compile();
 
     controller = module.get<CryptoController>(CryptoController);
-    mockCryptoService = module.get(CryptoService);
+    cryptoService = module.get(CryptoService) as jest.Mocked<CryptoService>;
   });
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined();
+  describe('constructor', () => {
+    it('should be defined', () => {
+      expect(controller).toBeDefined();
+    });
   });
 
   describe('encryptData', () => {
-    const validEncryptRequest: EncryptRequestDto = {
-      payload: 'Hello World!',
-    };
-
     it('should encrypt data successfully', async () => {
-      mockCryptoService.encryptData.mockResolvedValue(mockEncryptedData);
-
-      const result = await controller.encryptData(validEncryptRequest);
-
-      expect(mockCryptoService.encryptData).toHaveBeenCalledWith('Hello World!');
-      expect(mockCryptoService.encryptData).toHaveBeenCalledTimes(1);
+      // Arrange
+      const requestDto: EncryptRequestDto = { payload: 'Hello World!' };
+      const mockEncryptedData: EncryptData = {
+        data1: 'encrypted_aes_key_mock',
+        data2: 'encrypted_payload_mock',
+      };
       
+      cryptoService.encryptData.mockResolvedValue(mockEncryptedData);
+
+      // Act
+      const result = await controller.encryptData(requestDto);
+
+      // Assert
+      expect(cryptoService.encryptData).toHaveBeenCalledWith('Hello World!');
+      expect(cryptoService.encryptData).toHaveBeenCalledTimes(1);
       expect(result).toEqual({
         successful: true,
         error_code: '',
         data: mockEncryptedData,
-      } as SuccessResponse<EncryptData>);
+      });
     });
 
-    it('should handle service errors and let global filter handle them', async () => {
-      const serviceError = new BadRequestException('Invalid payload');
-      mockCryptoService.encryptData.mockRejectedValue(serviceError);
-
-      await expect(controller.encryptData(validEncryptRequest)).rejects.toThrow(BadRequestException);
-      expect(mockCryptoService.encryptData).toHaveBeenCalledWith('Hello World!');
-    });
-
-    it('should call service with correct payload', async () => {
-      mockCryptoService.encryptData.mockResolvedValue(mockEncryptedData);
-      
+    it('should handle different payload types', async () => {
       const testCases = [
-        { payload: 'Simple text' },
-        { payload: 'Text with numbers 123' },
-        { payload: '{"json": "data"}' },
-        { payload: 'Special chars: !@#$%' },
+        'Simple text',
+        'Text with numbers 123',
+        'Special characters !@#$%^&*()',
+        'Unicode text 你好世界 🌍',
+        'A'.repeat(100), // Long text
       ];
 
-      for (const testCase of testCases) {
-        await controller.encryptData(testCase);
-        expect(mockCryptoService.encryptData).toHaveBeenCalledWith(testCase.payload);
+      for (const payload of testCases) {
+        const requestDto: EncryptRequestDto = { payload };
+        const mockEncryptedData: EncryptData = {
+          data1: `data1_for_${payload.substring(0, 10)}`,
+          data2: `data2_for_${payload.substring(0, 10)}`,
+        };
+
+        cryptoService.encryptData.mockResolvedValue(mockEncryptedData);
+
+        const result = await controller.encryptData(requestDto);
+
+        expect(cryptoService.encryptData).toHaveBeenCalledWith(payload);
+        expect(result.successful).toBe(true);
+        expect(result.error_code).toBe('');
+        expect(result.data).toBe(mockEncryptedData);
       }
     });
 
-    it('should return correct response format', async () => {
-      const customEncryptedData: EncryptData = {
-        data1: 'custom_data1',
-        data2: 'custom_data2',
+    it('should handle service throwing BadRequestException', async () => {
+      // Arrange
+      const requestDto: EncryptRequestDto = { payload: 'test' };
+      cryptoService.encryptData.mockRejectedValue(new BadRequestException('Invalid payload'));
+
+      // Act & Assert
+      await expect(controller.encryptData(requestDto)).rejects.toThrow(BadRequestException);
+      expect(cryptoService.encryptData).toHaveBeenCalledWith('test');
+    });
+
+    it('should handle service throwing InternalServerErrorException', async () => {
+      // Arrange
+      const requestDto: EncryptRequestDto = { payload: 'test' };
+      cryptoService.encryptData.mockRejectedValue(new InternalServerErrorException('Server error'));
+
+      // Act & Assert
+      await expect(controller.encryptData(requestDto)).rejects.toThrow(InternalServerErrorException);
+      expect(cryptoService.encryptData).toHaveBeenCalledWith('test');
+    });
+
+    it('should handle service throwing generic error', async () => {
+      // Arrange
+      const requestDto: EncryptRequestDto = { payload: 'test' };
+      cryptoService.encryptData.mockRejectedValue(new Error('Unexpected error'));
+
+      // Act & Assert
+      await expect(controller.encryptData(requestDto)).rejects.toThrow('Unexpected error');
+      expect(cryptoService.encryptData).toHaveBeenCalledWith('test');
+    });
+
+    it('should handle maximum length payload', async () => {
+      // Arrange
+      const maxPayload = 'A'.repeat(2000); // Maximum allowed length
+      const requestDto: EncryptRequestDto = { payload: maxPayload };
+      const mockEncryptedData: EncryptData = {
+        data1: 'encrypted_long_aes_key',
+        data2: 'encrypted_long_payload',
       };
       
-      mockCryptoService.encryptData.mockResolvedValue(customEncryptedData);
+      cryptoService.encryptData.mockResolvedValue(mockEncryptedData);
 
-      const result = await controller.encryptData(validEncryptRequest);
+      // Act
+      const result = await controller.encryptData(requestDto);
 
-      expect(result).toHaveProperty('successful', true);
-      expect(result).toHaveProperty('error_code', '');
-      expect(result).toHaveProperty('data');
-      expect(result.data).toEqual(customEncryptedData);
+      // Assert
+      expect(cryptoService.encryptData).toHaveBeenCalledWith(maxPayload);
+      expect(result.successful).toBe(true);
+      expect(result.data).toBe(mockEncryptedData);
     });
   });
 
   describe('decryptData', () => {
-    const validDecryptRequest: DecryptRequestDto = {
-      data1: 'encrypted_aes_key',
-      data2: 'encrypted_payload',
-    };
-
-    const mockDecryptedPayload = 'Hello World!';
-
     it('should decrypt data successfully', async () => {
-      mockCryptoService.decryptData.mockResolvedValue(mockDecryptedPayload);
+      // Arrange
+      const requestDto: DecryptRequestDto = {
+        data1: 'encrypted_aes_key',
+        data2: 'encrypted_payload',
+      };
+      const mockDecryptedPayload = 'Hello World!';
+      
+      cryptoService.decryptData.mockResolvedValue(mockDecryptedPayload);
 
-      const result = await controller.decryptData(validDecryptRequest);
+      // Act
+      const result = await controller.decryptData(requestDto);
 
-      expect(mockCryptoService.decryptData).toHaveBeenCalledWith(
+      // Assert
+      expect(cryptoService.decryptData).toHaveBeenCalledWith(
         'encrypted_aes_key',
         'encrypted_payload'
       );
-      expect(mockCryptoService.decryptData).toHaveBeenCalledTimes(1);
-      
+      expect(cryptoService.decryptData).toHaveBeenCalledTimes(1);
       expect(result).toEqual({
         successful: true,
         error_code: '',
         data: { payload: mockDecryptedPayload },
-      } as SuccessResponse<DecryptData>);
+      });
     });
 
-    it('should handle service errors and let global filter handle them', async () => {
-      const serviceError = new BadRequestException('Invalid encrypted data');
-      mockCryptoService.decryptData.mockRejectedValue(serviceError);
-
-      await expect(controller.decryptData(validDecryptRequest)).rejects.toThrow(BadRequestException);
-      expect(mockCryptoService.decryptData).toHaveBeenCalledWith(
-        'encrypted_aes_key',
-        'encrypted_payload'
-      );
-    });
-
-    it('should call service with correct parameters', async () => {
-      mockCryptoService.decryptData.mockResolvedValue(mockDecryptedPayload);
-      
+    it('should handle different encrypted data formats', async () => {
       const testCases = [
-        { data1: 'test_data1_1', data2: 'test_data2_1' },
-        { data1: 'test_data1_2', data2: 'test_data2_2' },
-        { data1: 'long_base64_string_here', data2: 'another_long_base64_string' },
+        {
+          data1: 'base64_encoded_key_1',
+          data2: 'base64_encoded_payload_1',
+          expected: 'Decrypted text 1',
+        },
+        {
+          data1: 'base64_encoded_key_2',
+          data2: 'base64_encoded_payload_2',
+          expected: 'Decrypted text 2',
+        },
+        {
+          data1: 'very_long_base64_key',
+          data2: 'very_long_base64_payload',
+          expected: 'Long decrypted content',
+        },
       ];
 
       for (const testCase of testCases) {
-        await controller.decryptData(testCase);
-        expect(mockCryptoService.decryptData).toHaveBeenCalledWith(
+        const requestDto: DecryptRequestDto = {
+          data1: testCase.data1,
+          data2: testCase.data2,
+        };
+
+        cryptoService.decryptData.mockResolvedValue(testCase.expected);
+
+        const result = await controller.decryptData(requestDto);
+
+        expect(cryptoService.decryptData).toHaveBeenCalledWith(
           testCase.data1,
           testCase.data2
         );
+        expect(result.successful).toBe(true);
+        expect(result.error_code).toBe('');
+        expect(result.data).toEqual({ payload: testCase.expected });
       }
     });
 
-    it('should return correct response format', async () => {
-      const customDecryptedPayload = 'Custom decrypted text';
-      mockCryptoService.decryptData.mockResolvedValue(customDecryptedPayload);
+    it('should handle service throwing BadRequestException', async () => {
+      // Arrange
+      const requestDto: DecryptRequestDto = {
+        data1: 'invalid_data1',
+        data2: 'invalid_data2',
+      };
+      cryptoService.decryptData.mockRejectedValue(new BadRequestException('Invalid encrypted data'));
 
-      const result = await controller.decryptData(validDecryptRequest);
-
-      expect(result).toHaveProperty('successful', true);
-      expect(result).toHaveProperty('error_code', '');
-      expect(result).toHaveProperty('data');
-      expect(result.data).toEqual({ payload: customDecryptedPayload });
+      // Act & Assert
+      await expect(controller.decryptData(requestDto)).rejects.toThrow(BadRequestException);
+      expect(cryptoService.decryptData).toHaveBeenCalledWith('invalid_data1', 'invalid_data2');
     });
 
-    it('should handle various decrypted payload types', async () => {
-      const testPayloads = [
-        'Simple text',
-        '{"json": "object"}',
-        '12345',
-        'Multi\nLine\nText',
-        'Unicode: 你好世界',
-        '',
-      ];
+    it('should handle service throwing InternalServerErrorException', async () => {
+      // Arrange
+      const requestDto: DecryptRequestDto = {
+        data1: 'data1',
+        data2: 'data2',
+      };
+      cryptoService.decryptData.mockRejectedValue(new InternalServerErrorException('Decryption failed'));
 
-      for (const payload of testPayloads) {
-        mockCryptoService.decryptData.mockResolvedValue(payload);
-        
-        const result = await controller.decryptData(validDecryptRequest);
-        
-        expect(result.data).toEqual({ payload });
-      }
+      // Act & Assert
+      await expect(controller.decryptData(requestDto)).rejects.toThrow(InternalServerErrorException);
+      expect(cryptoService.decryptData).toHaveBeenCalledWith('data1', 'data2');
+    });
+
+    it('should handle service throwing generic error', async () => {
+      // Arrange
+      const requestDto: DecryptRequestDto = {
+        data1: 'data1',
+        data2: 'data2',
+      };
+      cryptoService.decryptData.mockRejectedValue(new Error('Crypto operation failed'));
+
+      // Act & Assert
+      await expect(controller.decryptData(requestDto)).rejects.toThrow('Crypto operation failed');
+      expect(cryptoService.decryptData).toHaveBeenCalledWith('data1', 'data2');
+    });
+
+    it('should handle Unicode characters in decrypted result', async () => {
+      // Arrange
+      const requestDto: DecryptRequestDto = {
+        data1: 'unicode_key',
+        data2: 'unicode_payload',
+      };
+      const unicodeResult = 'สวัสดี Hello 你好 🌍';
+      
+      cryptoService.decryptData.mockResolvedValue(unicodeResult);
+
+      // Act
+      const result = await controller.decryptData(requestDto);
+
+      // Assert
+      expect(result.successful).toBe(true);
+      expect(result.data).toEqual({ payload: unicodeResult });
+    });
+
+    it('should handle empty string result from service', async () => {
+      // Arrange
+      const requestDto: DecryptRequestDto = {
+        data1: 'key_for_empty',
+        data2: 'payload_for_empty',
+      };
+      
+      cryptoService.decryptData.mockResolvedValue('');
+
+      // Act
+      const result = await controller.decryptData(requestDto);
+
+      // Assert
+      expect(result.successful).toBe(true);
+      expect(result.data).toEqual({ payload: '' });
     });
   });
 
-  describe('error handling integration', () => {
-    it('should propagate encrypt service errors without modification', async () => {
-      const errors = [
-        new BadRequestException('Invalid payload'),
-        new BadRequestException('Payload too long'),
-        new Error('Unexpected error'),
+  describe('integration scenarios', () => {
+    it('should handle rapid successive calls', async () => {
+      const encryptRequests = [
+        { payload: 'test1' },
+        { payload: 'test2' },
+        { payload: 'test3' },
       ];
 
-      for (const error of errors) {
-        mockCryptoService.encryptData.mockRejectedValue(error);
-        
-        await expect(controller.encryptData({ payload: 'test' })).rejects.toThrow(error);
-      }
-    });
-
-    it('should propagate decrypt service errors without modification', async () => {
-      const errors = [
-        new BadRequestException('Invalid encrypted data'),
-        new BadRequestException('Decryption failed'),
-        new Error('Crypto error'),
+      const mockResults = [
+        { data1: 'key1', data2: 'payload1' },
+        { data1: 'key2', data2: 'payload2' },
+        { data1: 'key3', data2: 'payload3' },
       ];
 
-      for (const error of errors) {
-        mockCryptoService.decryptData.mockRejectedValue(error);
-        
-        await expect(controller.decryptData({ 
-          data1: 'test1', 
-          data2: 'test2' 
-        })).rejects.toThrow(error);
-      }
-    });
-  });
+      cryptoService.encryptData
+        .mockResolvedValueOnce(mockResults[0])
+        .mockResolvedValueOnce(mockResults[1])
+        .mockResolvedValueOnce(mockResults[2]);
 
-  describe('response consistency', () => {
-    it('should always return consistent success response structure for encryption', async () => {
-      const testData = [
-        { data1: 'data1_1', data2: 'data2_1' },
-        { data1: 'data1_2', data2: 'data2_2' },
-        { data1: 'data1_3', data2: 'data2_3' },
-      ];
+      const results = await Promise.all(
+        encryptRequests.map(req => controller.encryptData(req))
+      );
 
-      for (const data of testData) {
-        mockCryptoService.encryptData.mockResolvedValue(data);
-        
-        const result = await controller.encryptData({ payload: 'test' });
-        
-        expect(result).toMatchObject({
-          successful: true,
-          error_code: '',
-          data: data,
-        });
-      }
+      expect(results).toHaveLength(3);
+      results.forEach((result, index) => {
+        expect(result.successful).toBe(true);
+        expect(result.data).toBe(mockResults[index]);
+      });
     });
 
-    it('should always return consistent success response structure for decryption', async () => {
-      const testPayloads = ['payload1', 'payload2', 'payload3'];
+    it('should maintain service call isolation between requests', async () => {
+      // First call
+      const encryptDto: EncryptRequestDto = { payload: 'first' };
+      cryptoService.encryptData.mockResolvedValueOnce({ data1: 'key1', data2: 'payload1' });
+      
+      await controller.encryptData(encryptDto);
 
-      for (const payload of testPayloads) {
-        mockCryptoService.decryptData.mockResolvedValue(payload);
-        
-        const result = await controller.decryptData({ 
-          data1: 'test1', 
-          data2: 'test2' 
-        });
-        
-        expect(result).toMatchObject({
-          successful: true,
-          error_code: '',
-          data: { payload },
-        });
-      }
+      // Second call
+      const decryptDto: DecryptRequestDto = { data1: 'key2', data2: 'payload2' };
+      cryptoService.decryptData.mockResolvedValueOnce('second');
+      
+      await controller.decryptData(decryptDto);
+
+      // Verify calls were made independently
+      expect(cryptoService.encryptData).toHaveBeenCalledWith('first');
+      expect(cryptoService.decryptData).toHaveBeenCalledWith('key2', 'payload2');
+      expect(cryptoService.encryptData).toHaveBeenCalledTimes(1);
+      expect(cryptoService.decryptData).toHaveBeenCalledTimes(1);
     });
   });
 });
