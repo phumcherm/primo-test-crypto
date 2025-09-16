@@ -125,5 +125,3 @@ curl -X POST http://localhost:3000/crypto/get-decrypt-data \
 - **class-validator** - สำหรับ validation
 - **Swagger** - สำหรับ API documentation
 - **Jest** - สำหรับ testing
-
-**สร้างด้วย NestJS**
