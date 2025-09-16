@@ -1,15 +1,18 @@
 import { Controller, Post, Body, UsePipes, ValidationPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { CryptoService } from './crypto.service';
-import { EncryptRequestDto } from './dto/encrypt-request.dto';
-import { DecryptRequestDto } from './dto/decrypt-request.dto';
-import { EncryptResponseDto, DecryptResponseDto } from './dto/api-response.dto';
-import { EncryptResponse, DecryptResponse, SuccessResponse, EncryptData, DecryptData } from '../../common/interfaces/api-response.interface';
+import { EncryptService } from './application/services/encrypt.service';
+import { DecryptService } from './application/services/decrypt.service';
+import { EncryptRequestDto } from './presentation/dto';
+import { DecryptRequestDto } from './presentation/dto'; 
+import { EncryptResponseDto, DecryptResponseDto } from './presentation/dto';
 
 @ApiTags('Crypto')
-@Controller()
+@Controller('crypto')
 export class CryptoController {
-  constructor(private readonly cryptoService: CryptoService) {}
+  constructor(
+    private readonly encryptService: EncryptService,
+    private readonly decryptService: DecryptService,
+  ) {}
 
   @Post('get-encrypt-data')
   @ApiOperation({
@@ -37,13 +40,13 @@ export class CryptoController {
     }
   })
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
-  async encryptData(@Body() encryptRequest: EncryptRequestDto): Promise<SuccessResponse<EncryptData>> {
-    const result = await this.cryptoService.encryptData(encryptRequest.payload);
+  async encryptData(@Body() encryptRequest: EncryptRequestDto): Promise<EncryptResponseDto> {
+    const result = await this.encryptService.encryptData(encryptRequest.payload);
     return {
       successful: true,
       error_code: '',
       data: result,
-    };
+    } as EncryptResponseDto;
   }
 
   @Post('get-decrypt-data')
@@ -71,12 +74,12 @@ export class CryptoController {
     }
   })
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
-  async decryptData(@Body() decryptRequest: DecryptRequestDto): Promise<SuccessResponse<DecryptData>> {
-    const result = await this.cryptoService.decryptData(decryptRequest.data1, decryptRequest.data2);
+  async decryptData(@Body() decryptRequest: DecryptRequestDto): Promise<DecryptResponseDto> {
+    const result = await this.decryptService.decryptData(decryptRequest.data1, decryptRequest.data2);
     return {
       successful: true,
       error_code: '',
       data: { payload: result },
-    };
+    } as DecryptResponseDto;
   }
 }

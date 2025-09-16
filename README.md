@@ -1,51 +1,83 @@
 # Simple Crypto API
 
-A simple NestJS API for RSA + AES encryption and decryption.
+NestJS API for RSA + AES encryption and decryption.
 
-## Features
+## Installation
 
-- **RSA + AES Hybrid Encryption**: Uses AES for payload encryption and RSA for key encryption
-- **Swagger Documentation**: Available at `/api-docs`
-- **Environment Configuration**: RSA keys stored in `.env` file
-- **Input Validation**: Request payload validation using class-validator
-- **Error Handling**: Consistent error response format
+```bash
+npm install
+```
 
-## API Endpoints
+## Environment Setup
 
-### POST /get-encrypt-data
-Encrypts data using AES + RSA encryption.
+1. Copy environment file:
+```bash
+cp env.example .env
+```
 
-**Request:**
+2. Edit `.env` file with your RSA keys:
+```env
+PORT=3000
+
+RSA_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+YOUR_ACTUAL_PRIVATE_KEY_HERE
+-----END PRIVATE KEY-----"
+
+RSA_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----
+YOUR_ACTUAL_PUBLIC_KEY_HERE
+-----END PUBLIC KEY-----"
+```
+
+Generate RSA keys at: https://cryptotools.net/rsagen
+
+## Usage
+
+### Development
+```bash
+npm run start:dev
+```
+
+### Production
+```bash
+npm run build
+npm run start:prod
+```
+
+## API
+
+Server runs on: http://localhost:3000  
+API Documentation: http://localhost:3000/api-docs
+
+### Endpoints
+
+#### POST /crypto/get-encrypt-data
 ```json
 {
   "payload": "Hello World!"
 }
 ```
 
-**Response:**
+Response:
 ```json
 {
   "successful": true,
   "error_code": "",
   "data": {
-    "data1": "encrypted_aes_key_with_rsa",
-    "data2": "encrypted_payload_with_aes"
+    "data1": "encrypted_aes_key_base64",
+    "data2": "encrypted_payload_base64"
   }
 }
 ```
 
-### POST /get-decrypt-data
-Decrypts data using RSA + AES decryption.
-
-**Request:**
+#### POST /crypto/get-decrypt-data
 ```json
 {
-  "data1": "encrypted_aes_key_with_rsa",
-  "data2": "encrypted_payload_with_aes"
+  "data1": "encrypted_aes_key_base64",
+  "data2": "encrypted_payload_base64"
 }
 ```
 
-**Response:**
+Response:
 ```json
 {
   "successful": true,
@@ -56,57 +88,23 @@ Decrypts data using RSA + AES decryption.
 }
 ```
 
-## How to Start
+## Testing
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Set up environment:**
-   - Copy RSA keys to `.env` file
-   - Keys are already configured for development
-
-3. **Start development server:**
 ```bash
-   npm run start:dev
-   ```
-
-4. **Access the API:**
-   - API: http://localhost:3000
-   - Swagger Documentation: http://localhost:3000/api-docs
-
-## Project Structure
-
-```
-src/
-├── dto/                    # Data Transfer Objects
-│   ├── encrypt-request.dto.ts
-│   ├── decrypt-request.dto.ts
-│   └── api-response.dto.ts
-├── crypto.service.ts       # Crypto business logic
-├── crypto.controller.ts    # API endpoints
-├── app.module.ts          # Main application module
-└── main.ts                # Application entry point
+npm test
 ```
 
-## Encryption Process
+## API Test Example
 
-1. Generate random AES key (256-bit)
-2. Encrypt payload with AES key using AES-256-CBC
-3. Encrypt AES key with RSA private key
-4. Return encrypted AES key (data1) and encrypted payload (data2)
+```bash
+# Encrypt
+curl -X POST http://localhost:3000/crypto/get-encrypt-data \
+  -H "Content-Type: application/json" \
+  -d '{"payload": "Hello World!"}'
 
-## Decryption Process
-
-1. Decrypt AES key with RSA public key (from data1)
-2. Extract IV and encrypted payload (from data2)
-3. Decrypt payload with AES key using AES-256-CBC
-4. Return decrypted payload
-
-## Security Notes
-
-- RSA keys are stored in environment variables
-- AES keys are generated randomly for each encryption
-- Uses PKCS1 padding for RSA operations
-- Payload size limit: 2000 characters
+# Decrypt (use data1 and data2 from encrypt response)
+curl -X POST http://localhost:3000/crypto/get-decrypt-data \
+  -H "Content-Type: application/json" \
+  -d '{"data1": "YOUR_DATA1", "data2": "YOUR_DATA2"}'
+```
+**Made with ❤️ using NestJS**
