@@ -7,13 +7,8 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS
   app.enableCors();
-
-  // Global exception filter
   app.useGlobalFilters(new GlobalExceptionFilter());
-
-  // Global validation pipe
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
@@ -22,7 +17,6 @@ async function bootstrap() {
     enableDebugMessages: true,
   }));
 
-  // Swagger configuration
   const config = new DocumentBuilder()
     .setTitle('Simple Crypto API')
     .setDescription('A simple API for RSA + AES encryption and decryption')
@@ -31,7 +25,7 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api-docs', app, document, {
+  SwaggerModule.setup('api/docs', app, document, {
     swaggerOptions: {
       persistAuthorization: true,
     },
@@ -40,7 +34,7 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   await app.listen(port);
   
-  console.log(`🚀 Application is running on: http://localhost:${port}`);
-  console.log(`📚 Swagger documentation: http://localhost:${port}/api-docs`);
+  console.log(`Application is running on: http://localhost:${port}`);
+  console.log(`Swagger documentation: http://localhost:${port}/api/docs`);
 }
 bootstrap();

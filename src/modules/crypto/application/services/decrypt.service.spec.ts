@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DecryptService } from './decrypt.service';
 import { EncryptService } from './encrypt.service';
 import { CryptoKeyProvider } from '../../infrastructure/providers/crypto-key.provider';
-import { InvalidEncryptedDataException, DecryptionFailedException } from '../../domain/exceptions/crypto.exceptions';
+import { DecryptionFailedException } from '../../domain/exceptions/crypto.exceptions';
 import * as crypto from 'crypto';
 
 describe('DecryptService', () => {
@@ -10,7 +10,6 @@ describe('DecryptService', () => {
   let encryptService: EncryptService;
   let mockCryptoKeyProvider: jest.Mocked<CryptoKeyProvider>;
 
-  // Generate real RSA keys for testing
   const { publicKey: mockPublicKey, privateKey: mockPrivateKey } = crypto.generateKeyPairSync('rsa', {
     modulusLength: 2048,
     publicKeyEncoding: { type: 'spki', format: 'pem' },
@@ -45,30 +44,8 @@ describe('DecryptService', () => {
   });
 
   describe('decryptData', () => {
-    const validData1 = 'dGVzdERhdGEx'; // base64 for 'testData1'
-    const validData2 = 'dGVzdERhdGEy'; // base64 for 'testData2'
-
-    describe('validation', () => {
-      it('should throw InvalidEncryptedDataException for empty data1', async () => {
-        await expect(service.decryptData('', validData2))
-          .rejects.toThrow(InvalidEncryptedDataException);
-      });
-
-      it('should throw InvalidEncryptedDataException for empty data2', async () => {
-        await expect(service.decryptData(validData1, ''))
-          .rejects.toThrow(InvalidEncryptedDataException);
-      });
-
-      it('should throw InvalidEncryptedDataException for null data1', async () => {
-        await expect(service.decryptData(null as any, validData2))
-          .rejects.toThrow(InvalidEncryptedDataException);
-      });
-
-      it('should throw InvalidEncryptedDataException for null data2', async () => {
-        await expect(service.decryptData(validData1, null as any))
-          .rejects.toThrow(InvalidEncryptedDataException);
-      });
-    });
+    const validData1 = 'dGVzdERhdGEx';
+    const validData2 = 'dGVzdERhdGEy';
 
     describe('decryption errors', () => {
       it('should throw DecryptionFailedException for invalid base64 data1', async () => {
@@ -94,7 +71,7 @@ describe('DecryptService', () => {
         try {
           await service.decryptData(validData1, validData2);
         } catch (error) {
-          // Expected to fail with mock data, but should call the method
+          // Expected to fail with mock data
         }
         
         expect(mockCryptoKeyProvider.getRsaPrivateKey).toHaveBeenCalled();

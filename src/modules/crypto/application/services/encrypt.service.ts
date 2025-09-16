@@ -3,8 +3,7 @@ import * as crypto from 'crypto';
 import { IEncryptionService, EncryptionResult } from '../../domain/interfaces/crypto.interface';
 import { CryptoKeyProvider } from '../../infrastructure/providers/crypto-key.provider';
 import { CryptoAlgorithm, RsaPadding } from '../../domain/types/crypto.types';
-import { InvalidPayloadException, EncryptionFailedException } from '../../domain/exceptions/crypto.exceptions';
-import { isNonEmptyString } from '../../../../common/types/strict-types';
+import { EncryptionFailedException } from '../../domain/exceptions/crypto.exceptions';
 
 @Injectable()
 export class EncryptService implements IEncryptionService {
@@ -14,10 +13,6 @@ export class EncryptService implements IEncryptionService {
   constructor(private readonly cryptoKeyProvider: CryptoKeyProvider) {}
 
   async encryptData(payload: string): Promise<EncryptionResult> {
-    if (!isNonEmptyString(payload)) {
-      throw new InvalidPayloadException('Payload must be a non-empty string');
-    }
-
     try {
       const aesKey: Buffer = crypto.randomBytes(32);
       const iv: Buffer = crypto.randomBytes(16);

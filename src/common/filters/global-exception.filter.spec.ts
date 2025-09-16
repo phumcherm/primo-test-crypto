@@ -518,7 +518,9 @@ describe('GlobalExceptionFilter', () => {
       for (const exception of testExceptions) {
         filter.catch(exception, mockArgumentsHost);
         
-        const lastCall = mockResponse.json.mock.calls[mockResponse.json.mock.calls.length - 1];
+        const calls = mockResponse.json.mock.calls;
+        expect(calls.length).toBeGreaterThan(0);
+        const lastCall = calls[calls.length - 1]!;
         const responseFormat = lastCall[0];
         
         expect(responseFormat).toHaveProperty('successful', false);

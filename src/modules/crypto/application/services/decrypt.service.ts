@@ -3,8 +3,7 @@ import * as crypto from 'crypto';
 import { IDecryptionService } from '../../domain/interfaces/crypto.interface';
 import { CryptoKeyProvider } from '../../infrastructure/providers/crypto-key.provider';
 import { CryptoAlgorithm, RsaPadding } from '../../domain/types/crypto.types';
-import { InvalidEncryptedDataException, DecryptionFailedException } from '../../domain/exceptions/crypto.exceptions';
-import { isNonEmptyString } from '../../../../common/types/strict-types';
+import { DecryptionFailedException } from '../../domain/exceptions/crypto.exceptions';
 
 @Injectable()
 export class DecryptService implements IDecryptionService {
@@ -14,10 +13,6 @@ export class DecryptService implements IDecryptionService {
   constructor(private readonly cryptoKeyProvider: CryptoKeyProvider) {}
 
   async decryptData(data1: string, data2: string): Promise<string> {
-    if (!isNonEmptyString(data1) || !isNonEmptyString(data2)) {
-      throw new InvalidEncryptedDataException('Both data1 and data2 must be non-empty strings');
-    }
-
     try {
       const aesKey: Buffer = crypto.privateDecrypt(
         {
