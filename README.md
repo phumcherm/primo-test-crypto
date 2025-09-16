@@ -30,7 +30,7 @@ YOUR_ACTUAL_PUBLIC_KEY_HERE
 
 Generate RSA keys at: https://cryptotools.net/rsagen
 
-## Usage
+## การใช้งาน
 
 ### Development
 ```bash
@@ -107,4 +107,23 @@ curl -X POST http://localhost:3000/crypto/get-decrypt-data \
   -H "Content-Type: application/json" \
   -d '{"data1": "YOUR_DATA1", "data2": "YOUR_DATA2"}'
 ```
-**Made with ❤️ using NestJS**
+
+## คุณสมบัติ
+
+- ✅ เข้ารหัส/ถอดรหัสด้วย RSA + AES
+- ✅ Validation ด้วย class-validator
+- ✅ Global Exception Filter
+- ✅ Swagger API Documentation
+- ✅ Type Safety เต็มรูปแบบ
+- ✅ Unit Tests ครอบคลุม
+- ✅ Clean Architecture
+
+## เทคโนโลยีที่ใช้
+
+- **NestJS** - Framework หลัก
+- **TypeScript** - ภาษาที่ใช้
+- **class-validator** - สำหรับ validation
+- **Swagger** - สำหรับ API documentation
+- **Jest** - สำหรับ testing
+
+**สร้างด้วย NestJS**
